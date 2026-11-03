@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daftar ijazah · Ijazah Bersuara</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>Daftar ijazah</h1>
+  <p class="lead">Ijazah yang telah diterbitkan. Ijazah yang dicabut akan ditolak saat verifikasi.</p>
+  <div class="card"><div id="list" class="muted">Memuat…</div></div>
+</main>
+<script src="js/common.js"></script>
+<script>
+async function load() {
+  const rows = await api('/api/diplomas'), el = document.getElementById('list');
+  if (!rows.length) { el.innerHTML = 'Belum ada ijazah. <a href="terbitkan.html">Terbitkan ijazah pertama</a>.'; return; }
+  el.classList.remove('muted');
+  el.innerHTML = `<table><tr><th>Nomor</th><th>Nama</th><th>Program studi</th><th>Lulus</th><th>Penanda tangan</th><th class="num">QR</th><th>Status</th><th></th></tr>${rows.map((d) => `
+    <tr><td>${esc(d.nomor_ijazah)}</td><td><b>${esc(d.nama)}</b><div class="muted">${esc(d.nim)}</div></td><td>${esc(d.program_studi)}</td>
+    <td>${fmtDate(d.tanggal_lulus)}</td><td>${esc(d.signer_name)}<div class="muted">${esc(d.signer_role || '')}</div></td>
+    <td class="num">v${d.qr_version}<div class="muted">${d.payload_bytes} B</div></td>
+    <td>${d.revoked ? '<span class="pill bad">Dicabut</span>' : '<span class="pill ok">Berlaku</span>'}</td>
+    <td><div class="row"><a class="btn secondary" href="${apiUrl(`/api/diplomas/${d.id}/pdf`)}" target="_blank">PDF</a>
+      ${d.revoked ? '' : `<button class="secondary" onclick="revoke(${d.id}, '${esc(d.nomor_ijazah)}')">Cabut</button>`}</div></td></tr>`).join('')}</table>`;
+}
+async function revoke(id, no) {
+  if (!document.getElementById('confirm-' + id)) {
+    const row = event.target.closest('div');
+    row.insertAdjacentHTML('beforeend', `<span id="confirm-${id}" class="muted">Yakin cabut ${no}? <button onclick="doRevoke(${id})">Ya, cabut</button></span>`);
+  }
+}
+async function doRevoke(id) {
+  try { await api(`/api/diplomas/${id}/revoke`, { method: 'POST' }); load(); } catch (e) { notice(document.getElementById('list'), 'bad', e.message); }
+}
+load().catch((e) => notice(document.getElementById('list'), 'bad', e.message));
+</script>
+</body>
+</html>

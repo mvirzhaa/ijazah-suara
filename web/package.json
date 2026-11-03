@@ -1,0 +1,26 @@
+{
+  "name": "ijazah-bersuara",
+  "version": "1.0.0",
+  "description": "Penerbitan dan verifikasi ijazah dengan kode QR berisi suara penanda tangan (Codec 2), hash dokumen, dan tanda tangan Ed25519",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "migrate": "node src/migrate.js",
+    "test": "node test/e2e.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.22.3",
+    "jpeg-js": "^0.4.4",
+    "jsqr": "^1.4.0",
+    "multer": "^1.4.5-lts.1",
+    "pdfkit": "^0.20.2",
+    "pg": "^8.23.1",
+    "pngjs": "^7.0.0",
+    "qrcode": "^1.5.4",
+    "zxing-wasm": "^3.1.6"
+  }
+}

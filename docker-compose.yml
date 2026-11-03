@@ -1,0 +1,40 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ijazah
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ijazah}
+      POSTGRES_DB: ijazah
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ijazah -d ijazah"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  voice:
+    build: ./voice-service
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://ijazah:${POSTGRES_PASSWORD:-ijazah}@db:5432/ijazah
+      VOICE_SERVICE_URL: http://voice:8001
+      KEY_DIR: /data/keys
+    volumes:
+      - keys:/data/keys          # kunci privat penerbit: CADANGKAN volume ini
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      voice:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  keys:

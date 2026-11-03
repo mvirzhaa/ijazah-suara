@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terbitkan ijazah · Ijazah Bersuara</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>Terbitkan ijazah</h1>
+  <p class="lead">Data di bawah di-hash (SHA-256), digabung dengan suara pernyataan penanda tangan, lalu ditandatangani Ed25519 dan dicetak sebagai kode QR pada ijazah.</p>
+
+  <form id="f">
+    <div class="card">
+      <h2>Data lulusan</h2>
+      <div class="grid">
+        <div><label>Nomor ijazah</label><input name="nomor_ijazah" required placeholder="mis. 001/UNIV/2026"></div>
+        <div><label>Nama lengkap</label><input name="nama" required></div>
+        <div><label>NIM</label><input name="nim" required></div>
+        <div><label>Tempat lahir</label><input name="tempat_lahir" required></div>
+        <div><label>Tanggal lahir</label><input name="tanggal_lahir" type="date" required></div>
+        <div><label>Program studi</label><input name="program_studi" required></div>
+        <div><label>Fakultas</label><input name="fakultas" required></div>
+        <div><label>Gelar</label><input name="gelar" required placeholder="Sarjana Komputer (S.Kom.)"></div>
+        <div><label>Tanggal lulus</label><input name="tanggal_lulus" type="date" required></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Pernyataan suara penanda tangan</h2>
+      <div style="max-width:420px;margin-bottom:12px"><label>Penanda tangan</label><select name="signer_speaker_id" id="signer" required></select></div>
+      <p class="muted">Contoh kalimat (±4 detik): “Saya, <i>nama</i>, <i>jabatan</i>, menyatakan ijazah ini sah.”</p>
+      <div id="rec"></div>
+    </div>
+
+    <div class="row"><button id="submit" disabled>Terbitkan ijazah</button><span id="msg"></span></div>
+  </form>
+
+  <div id="result" class="card hidden" style="margin-top:18px"></div>
+</main>
+<script src="js/common.js"></script>
+<script>
+const rec = new FixedRecorder(document.getElementById('rec'), 4);
+const submit = document.getElementById('submit');
+rec.onchange = () => (submit.disabled = false);
+
+api('/api/speakers').then((list) => {
+  document.getElementById('signer').innerHTML = list.length
+    ? list.map((s) => `<option value="${s.id}">${esc(s.name)}${s.role ? ' — ' + esc(s.role) : ''}</option>`).join('')
+    : '<option value="">Tambahkan penutur di halaman Basis data suara</option>';
+});
+
+document.getElementById('f').onsubmit = async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('msg');
+  if (!rec.blob) return notice(msg, 'bad', 'Rekam pernyataan suara terlebih dahulu.');
+  const fd = new FormData(e.target); fd.append('audio', rec.blob, 'pernyataan.webm');
+  submit.disabled = true; msg.innerHTML = '<span class="muted">Memproses suara, menandatangani, membuat QR…</span>';
+  try {
+    const r = await api('/api/diplomas', { body: fd });
+    msg.innerHTML = '';
+    const el = document.getElementById('result'); el.classList.remove('hidden');
+    el.innerHTML = `<h2>Ijazah berhasil diterbitkan</h2>
+      <div class="row" style="align-items:flex-start;gap:24px">
+        <div class="qrbox"><img src="${apiUrl(`/api/diplomas/${r.id}/qr.png`)}" alt="Kode QR ijazah"></div>
+        <div class="kv" style="flex:1;min-width:260px">
+          <div>Isi QR</div><div>${r.payloadBytes} byte (suara ${r.voiceBytes} byte, Codec 2 ${r.codecMode})</div>
+          <div>Versi QR</div><div>${r.qrVersion} (${r.qrModules} × ${r.qrModules} modul)</div>
+          <div>Durasi suara</div><div>${r.durationS} detik</div>
+          <div>Kecocokan dengan sampel penanda tangan</div><div>${r.issuanceSimilarityPct === null ? '–' : r.issuanceSimilarityPct + '%'}</div>
+          <div>SHA-256 dokumen</div><div class="mono">${r.docHash}</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <a class="btn" href="${apiUrl(`/api/diplomas/${r.id}/pdf`)}" target="_blank">Buka PDF ijazah untuk dicetak</a>
+        <a class="btn secondary" href="${apiUrl(`/api/diplomas/${r.id}/qr.png`)}" download="qr-ijazah-${r.id}.png">Unduh QR</a>
+        <a class="btn secondary" href="verifikasi.html">Uji verifikasi</a>
+      </div>`;
+    e.target.reset(); rec.reset(); document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+  } catch (err) { notice(msg, 'bad', err.message); submit.disabled = false; }
+};
+</script>
+</body>
+</html>

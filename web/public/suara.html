@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Basis data suara · Ijazah Bersuara</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>Basis data suara</h1>
+  <p class="lead">Rekaman di sini menjadi pembanding saat verifikasi. Rekam 3–5 sampel per penanda tangan dengan kalimat berbeda agar pencocokan lebih andal.</p>
+
+  <div class="card">
+    <h2>Tambah penutur</h2>
+    <form id="fSpk" class="row">
+      <div style="flex:2;min-width:200px"><label>Nama lengkap</label><input name="name" required placeholder="Prof. Dr. …"></div>
+      <div style="flex:1;min-width:160px"><label>Jabatan</label><input name="role" placeholder="Rektor"></div>
+      <div style="align-self:flex-end"><button>Tambah</button></div>
+    </form>
+    <div id="msgSpk"></div>
+  </div>
+
+  <div class="card">
+    <h2>Rekam sampel suara</h2>
+    <div class="row" style="margin-bottom:12px">
+      <div style="min-width:260px;flex:1"><label>Penutur</label><select id="spkSel"></select></div>
+    </div>
+    <div id="rec"></div>
+    <div class="row" style="margin-top:12px"><button id="btnSave" disabled>Simpan ke basis data</button><span id="msgRec"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Penutur terdaftar</h2>
+    <div id="list" class="muted">Memuat…</div>
+  </div>
+</main>
+<script src="js/common.js"></script>
+<script>
+const rec = new FixedRecorder(document.getElementById('rec'), 4);
+const btnSave = document.getElementById('btnSave');
+rec.onchange = () => (btnSave.disabled = false);
+
+async function loadSpeakers() {
+  const list = await api('/api/speakers');
+  const sel = document.getElementById('spkSel'), cur = sel.value;
+  sel.innerHTML = list.map((s) => `<option value="${s.id}">${esc(s.name)}${s.role ? ' — ' + esc(s.role) : ''}</option>`).join('') || '<option value="">(belum ada penutur)</option>';
+  if (cur) sel.value = cur;
+  const el = document.getElementById('list');
+  if (!list.length) { el.textContent = 'Belum ada penutur.'; return; }
+  const parts = await Promise.all(list.map(async (s) => {
+    const recs = await api(`/api/speakers/${s.id}/recordings`);
+    return `<h3 style="font-size:1rem;margin:16px 0 6px">${esc(s.name)} <span class="muted">${esc(s.role || '')} · ${recs.length} rekaman</span></h3>
+      ${recs.length ? `<table><tr><th>#</th><th>Jenis</th><th>Waktu</th><th class="num">Durasi</th><th>Asli</th><th>Hasil Codec 2</th></tr>${recs.map((r) => `
+        <tr><td>${r.id}</td><td>${r.purpose === 'issuance' ? 'Penerbitan ijazah' : 'Sampel'}</td><td>${fmtDateTime(r.created_at)}</td>
+        <td class="num">${Number(r.duration_s).toFixed(1)} dtk</td>
+        <td><audio controls preload="none" src="${apiUrl(`/api/recordings/${r.id}/audio?kind=original`)}"></audio></td>
+        <td><audio controls preload="none" src="${apiUrl(`/api/recordings/${r.id}/audio?kind=decoded`)}"></audio></td></tr>`).join('')}</table>` : '<p class="muted">Belum ada rekaman.</p>'}`;
+  }));
+  el.classList.remove('muted'); el.innerHTML = parts.join('');
+}
+
+document.getElementById('fSpk').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    const s = await api('/api/speakers', { json: { name: f.get('name'), role: f.get('role') } });
+    e.target.reset(); notice(document.getElementById('msgSpk'), 'ok', `Penutur ${s.name} ditambahkan.`);
+    await loadSpeakers(); document.getElementById('spkSel').value = s.id;
+  } catch (err) { notice(document.getElementById('msgSpk'), 'bad', err.message); }
+};
+
+btnSave.onclick = async () => {
+  const id = document.getElementById('spkSel').value, msg = document.getElementById('msgRec');
+  if (!id) return notice(msg, 'bad', 'Pilih penutur terlebih dahulu.');
+  const fd = new FormData(); fd.append('audio', rec.blob, 'sampel.webm');
+  btnSave.disabled = true; msg.innerHTML = '<span class="muted">Memproses (Codec 2 + embedding)…</span>';
+  try {
+    const r = await api(`/api/speakers/${id}/recordings`, { body: fd });
+    notice(msg, 'ok', `Tersimpan: ${r.durationS} dtk, ${r.codecBytes} byte Codec 2 ${r.mode}.`);
+    await loadSpeakers();
+  } catch (err) { notice(msg, 'bad', err.message); btnSave.disabled = false; }
+};
+
+loadSpeakers().catch((e) => notice(document.getElementById('list'), 'bad', e.message));
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ijazah Bersuara</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>Ijazah Bersuara</h1>
+  <p class="lead">Penerbitan ijazah dengan kode QR yang memuat suara penanda tangan (Codec 2), hash dokumen SHA-256, dan tanda tangan digital Ed25519.</p>
+
+  <div class="grid">
+    <a class="card" href="suara.html" style="text-decoration:none;color:inherit"><h2>1. Basis data suara</h2><p class="muted">Daftarkan penanda tangan (Rektor, Dekan, …) dan rekam beberapa sampel suara mereka sebagai pembanding.</p></a>
+    <a class="card" href="terbitkan.html" style="text-decoration:none;color:inherit"><h2>2. Terbitkan ijazah</h2><p class="muted">Isi data lulusan, rekam pernyataan penanda tangan, lalu sistem membuat QR bertanda tangan dan PDF ijazah siap cetak.</p></a>
+    <a class="card" href="verifikasi.html" style="text-decoration:none;color:inherit"><h2>3. Verifikasi</h2><p class="muted">Pindai QR pada ijazah: cek tanda tangan dan hash dokumen, putar suara, dan tampilkan 3 rekaman paling mirip (ambang <span id="thr">80</span>%).</p></a>
+  </div>
+
+  <div class="card">
+    <h2>Status sistem</h2>
+    <div id="health" class="muted">Memeriksa…</div>
+  </div>
+
+  <div class="card">
+    <h2>Token admin</h2>
+    <p class="muted">Diperlukan jika server dijalankan dengan <span class="mono">ADMIN_TOKEN</span>. Disimpan hanya di peramban ini.</p>
+    <div class="row"><input id="tok" type="password" placeholder="Token admin" style="max-width:320px"><button id="save" class="secondary">Simpan</button><span id="saved" class="muted"></span></div>
+  </div>
+</main>
+<script src="js/common.js"></script>
+<script>
+document.getElementById('tok').value = adminToken();
+document.getElementById('save').onclick = () => { try { localStorage.setItem('adminToken', document.getElementById('tok').value); document.getElementById('saved').textContent = 'Tersimpan'; } catch { document.getElementById('saved').textContent = 'Penyimpanan peramban tidak tersedia'; } };
+api('/api/health').then((h) => {
+  document.getElementById('thr').textContent = h.matchThreshold;
+  const v = h.voiceService && h.voiceService.ok;
+  document.getElementById('health').innerHTML = `
+    <div class="kv">
+      <div>Basis data</div><div><span class="pill ok">Terhubung</span></div>
+      <div>Layanan suara</div><div>${v ? `<span class="pill ok">Aktif</span> <span class="muted">model ${esc(h.voiceService.model)}</span>` : `<span class="pill bad">Tidak aktif</span> <span class="muted">${esc(h.voiceService && h.voiceService.error)}</span>`}</div>
+      <div>Codec suara</div><div>Codec 2 mode ${esc(h.codecMode)} bit/s</div>
+      <div>Ambang kemiripan</div><div>${h.matchThreshold}%</div>
+      <div>ID kunci penerbit</div><div class="mono">${esc(h.keyId)}</div>
+    </div>`;
+}).catch((e) => notice(document.getElementById('health'), 'bad', e.message));
+</script>
+</body>
+</html>

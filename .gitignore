@@ -1,0 +1,38 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Keys (Kunci privat Ed25519 - JANGAN PERNAH DI-COMMIT)
+keys/
+web/keys/
+*.pem
+
+# Dependencies
+node_modules/
+package-lock.json.backup
+
+# Python / Virtualenv / Cache
+__pycache__/
+*.pyc
+voice-service/.venv/
+.venv/
+venv/
+
+# Large ONNX models (diunduh otomatis saat build Docker / setup venv)
+voice-service/models/*.onnx
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage/
+tmp/
+temp/

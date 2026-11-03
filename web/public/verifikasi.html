@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verifikasi · Ijazah Bersuara</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>Verifikasi ijazah</h1>
+  <p class="lead">Pindai kode QR pada ijazah dengan kamera, atau unggah foto/pindaian ijazah. Sistem memeriksa tanda tangan dan hash dokumen, menyintesis suara dari QR, lalu mencari rekaman paling mirip di basis data.</p>
+
+  <div class="card">
+    <div class="row">
+      <button id="cam">Pindai dengan kamera</button>
+      <button id="stop" class="secondary hidden">Hentikan kamera</button>
+      <label class="btn secondary" style="margin:0">Unggah gambar (PNG/JPEG)<input id="file" type="file" accept="image/png,image/jpeg" class="hidden"></label>
+      <span id="status" class="muted"></span>
+    </div>
+    <video id="video" class="hidden" playsinline muted style="margin-top:12px"></video>
+    <canvas id="canvas" class="hidden"></canvas>
+  </div>
+
+  <div id="out"></div>
+</main>
+<script src="js/common.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script src="vendor/zxing/iife/reader/index.js"></script>
+<script>
+const statusEl = document.getElementById('status'), out = document.getElementById('out');
+const video = document.getElementById('video'), canvas = document.getElementById('canvas');
+let stream = null, raf = null;
+
+// ZXing (WebAssembly) sebagai pembaca utama, jsQR sebagai cadangan
+let zx = null;
+try { ZXingWASM.prepareZXingModule({ overrides: { locateFile: (p, prefix) => p.endsWith('.wasm') ? apiUrl('vendor/zxing/reader/' + p) : prefix + p } }); zx = ZXingWASM; } catch (e) { console.warn('ZXing tidak tersedia', e); }
+async function scanImageData(img, tryHarder = false) {
+  if (zx) {
+    try {
+      const res = await zx.readBarcodes(img, { formats: ['QRCode'], tryHarder, maxNumberOfSymbols: 1 });
+      if (res.length && res[0].isValid) return new Uint8Array(res[0].bytes);
+    } catch (e) { console.warn(e); }
+  }
+  const r = jsQR(img.data, img.width, img.height);
+  return r && r.binaryData ? new Uint8Array(r.binaryData) : null;
+}
+const toB64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+
+async function verifyBytes(u8) {
+  statusEl.textContent = `QR terbaca (${u8.length} byte). Memverifikasi…`;
+  try { render(await api('/api/verify', { json: { payload_b64: toB64(u8) } })); statusEl.textContent = ''; }
+  catch (e) { notice(out, 'bad', e.message); statusEl.textContent = ''; }
+}
+
+document.getElementById('cam').onclick = async () => {
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } }); }
+  catch (e) { statusEl.textContent = 'Kamera tidak dapat diakses: ' + e.message; return; }
+  video.srcObject = stream; video.classList.remove('hidden'); await video.play();
+  document.getElementById('stop').classList.remove('hidden'); statusEl.textContent = 'Arahkan kamera ke kode QR (dekatkan hingga QR memenuhi sebagian besar layar)…';
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const loop = async () => {
+    if (!stream) return;
+    if (video.videoWidth) {
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight; ctx.drawImage(video, 0, 0);
+      const bytes = await scanImageData(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      if (bytes) { stopCam(); verifyBytes(bytes); return; }
+    }
+    raf = setTimeout(loop, 120);
+  };
+  loop();
+};
+function stopCam() {
+  if (raf) clearTimeout(raf); if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null;
+  video.classList.add('hidden'); document.getElementById('stop').classList.add('hidden');
+}
+document.getElementById('stop').onclick = () => { stopCam(); statusEl.textContent = ''; };
+
+document.getElementById('file').onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  statusEl.textContent = 'Membaca gambar…';
+  const img = new Image(); img.src = URL.createObjectURL(f); await img.decode();
+  canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0);
+  const bytes = await scanImageData(ctx.getImageData(0, 0, canvas.width, canvas.height), true);
+  if (bytes) { e.target.value = ''; return verifyBytes(bytes); }
+  // cadangan: dekode di server
+  const fd = new FormData(); fd.append('image', f);
+  try { render(await api('/api/verify-image', { body: fd })); statusEl.textContent = ''; }
+  catch (err) { statusEl.textContent = ''; notice(out, 'bad', err.message); }
+  e.target.value = '';
+};
+
+const pill = (ok, t) => `<span class="pill ${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${esc(t)}</span>`;
+
+function render(r) {
+  const c = r.checks || {};
+  const items = [['format', 'Format QR'], ['signature', 'Tanda tangan digital'], ['document', 'Hash dokumen'], ['revocation', 'Status pencabutan'], ['voice', 'Kecocokan suara']]
+    .filter(([k]) => c[k]).map(([k, t]) => `<li>${pill(c[k].ok, t)} <span class="muted">${esc(c[k].message)}</span></li>`).join('');
+  const d = r.diploma;
+  const thr = r.matchThreshold;
+  const matches = (r.matches || []).map((m) => `
+    <tr>
+      <td>${m.rank}</td>
+      <td><b>${esc(m.speakerName)}</b><div class="muted">${esc(m.speakerRole || '')}</div></td>
+      <td>${m.purpose === 'issuance' ? 'Rekaman penerbitan' : 'Sampel'} #${m.recordingId}<div class="muted">${fmtDateTime(m.recordedAt)}</div></td>
+      <td class="num"><b>${m.similarityPct.toFixed(1)}%</b><div class="bar" title="Ambang ${thr}%"><div style="width:${m.similarityPct}%"></div><i style="left:${thr}%"></i></div></td>
+      <td>${m.meetsThreshold ? '<span class="pill ok">Cocok</span>' : '<span class="pill warn">Di bawah ambang</span>'}</td>
+      <td><audio controls preload="none" src="${apiUrl(`/api/recordings/${m.recordingId}/audio?kind=original`)}"></audio></td>
+    </tr>`).join('');
+  out.innerHTML = `
+    <div class="verdict ${r.valid ? 'ok' : 'bad'}">${r.valid ? '✓ IJAZAH ASLI DAN TIDAK DIUBAH' : '✗ IJAZAH TIDAK DAPAT DIVERIFIKASI'}</div>
+    <div class="card"><h2>Hasil pemeriksaan</h2><ul class="checks">${items}</ul></div>
+    ${d ? `<div class="card"><h2>Data ijazah terdaftar</h2><p class="muted">Cocokkan dengan yang tercetak di kertas.</p><div class="kv">
+      <div>Nomor ijazah</div><div>${esc(d.nomor_ijazah)}</div><div>Nama</div><div><b>${esc(d.nama)}</b></div><div>NIM</div><div>${esc(d.nim)}</div>
+      <div>Tempat, tanggal lahir</div><div>${esc(d.tempat_lahir)}, ${fmtDate(d.tanggal_lahir)}</div><div>Program studi</div><div>${esc(d.program_studi)}</div>
+      <div>Fakultas</div><div>${esc(d.fakultas)}</div><div>Gelar</div><div>${esc(d.gelar)}</div><div>Tanggal lulus</div><div>${fmtDate(d.tanggal_lulus)}</div>
+      <div>Penanda tangan</div><div>${esc(d.signer.name)} — ${esc(d.signer.role || '')}</div></div></div>` : ''}
+    ${r.voice ? `<div class="card"><h2>Suara</h2><div class="kv">
+      <div>Suara dari QR (sintesis Codec 2 ${esc(r.payload.codecMode)})</div><div><audio controls src="${r.voice.audio}"></audio></div>
+      ${d ? `<div>Rekaman asli saat penerbitan</div><div><audio controls preload="none" src="${apiUrl(`/api/recordings/${d.issuanceRecordingId}/audio?kind=original`)}"></audio></div>` : ''}
+    </div></div>
+    <div class="card"><h2>3 rekaman paling mirip</h2>
+      <p class="muted">Kemiripan = kemiripan kosinus embedding penutur (WeSpeaker), dalam persen. Ambang kecocokan: ${thr}%.</p>
+      ${matches ? `<table><tr><th>#</th><th>Penutur</th><th>Rekaman</th><th class="num">Kemiripan</th><th>Status</th><th>Dengar</th></tr>${matches}</table>` : '<p class="muted">Basis data suara masih kosong.</p>'}
+      ${(r.matches || []).some((m) => m.meetsThreshold) ? '' : `<div class="notice warn">Tidak ada rekaman yang mencapai ambang ${thr}%.</div>`}
+    </div>` : ''}
+    ${r.payload ? `<div class="card"><h2>Isi teknis QR</h2><div class="kv">
+      <div>SHA-256 dokumen</div><div class="mono">${esc(r.payload.docHash)}</div><div>ID kunci penerbit</div><div class="mono">${esc(r.payload.keyId)}</div>
+      <div>Waktu terbit</div><div>${fmtDateTime(r.payload.issuedAt)}</div><div>Ukuran</div><div>${r.payload.totalBytes} byte (suara ${r.payload.voiceBytes} byte)</div></div></div>` : ''}`;
+}
+</script>
+</body>
+</html>
