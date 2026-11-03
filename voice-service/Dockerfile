@@ -15,5 +15,5 @@ RUN mkdir -p /models && curl -fsSL -o /models/wespeaker_en_voxceleb_resnet34_LM.
 COPY app.py .
 ENV SPEAKER_MODEL=/models/wespeaker_en_voxceleb_resnet34_LM.onnx
 EXPOSE 8001
-HEALTHCHECK --interval=15s --timeout=5s --retries=10 CMD curl -fs http://localhost:8001/health || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=10 CMD curl -fs http://127.0.0.1:8001/health || exit 1
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8001"]
