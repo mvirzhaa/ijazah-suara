@@ -75,6 +75,104 @@ jsQR gagal membaca QR versi 29–30 dari pindaian halaman di bawah 200 dpi, seda
 Kamera dan mikrofon peramban hanya aktif di `localhost` atau **HTTPS**. Untuk dipakai dari ponsel di jaringan,
 pasang di balik *reverse proxy* HTTPS (mis. Caddy atau Nginx) dan isi `PUBLIC_BASE_URL`.
 
+## Panduan Push ke GitHub
+
+1. Buat repository baru di [GitHub](https://github.com/new) (misal: `ijazah-suara` atau `ijazah-bersuara`).
+2. Di komputer lokal Anda (terminal pada folder proyek ini):
+   ```bash
+   git remote add origin https://github.com/USERNAME/NAMA-REPO.git
+   git push -u origin main
+   ```
+   *(Ganti `USERNAME` dan `NAMA-REPO` sesuai akun GitHub Anda)*.
+
+## Panduan Deployment ke Server (SSH)
+
+Target Domain: `https://vr.ti.fts.uika-bogor.ac.id/ijazah-bersuara`
+
+### 1. Masuk ke Server lewat SSH
+```bash
+ssh user@server-ip-atau-domain
+```
+
+### 2. Kloning Repository dari GitHub
+```bash
+cd /opt  # atau direktori pilihan Anda
+git clone https://github.com/USERNAME/NAMA-REPO.git ijazah-suara
+cd ijazah-suara
+```
+
+### 3. Konfigurasi Lingkungan (`.env`)
+Salin berkas template dan sesuaikan:
+```bash
+cp .env.example .env
+nano .env
+```
+Pastikan variabel penting diatur seperti berikut:
+```ini
+POSTGRES_PASSWORD=isi_password_database_yang_kuat
+INSTITUTION_NAME=Universitas Ibn Khaldun Bogor
+INSTITUTION_SUBTITLE=Fakultas Teknik dan Sains - Program Studi Teknik Informatika
+INSTITUTION_CITY=Bogor
+PUBLIC_BASE_URL=https://vr.ti.fts.uika-bogor.ac.id/ijazah-bersuara
+BASE_PATH=/ijazah-bersuara
+ADMIN_TOKEN=buat_token_rahasia_untuk_akses_admin
+```
+
+### 4. Jalankan Aplikasi dengan Docker Compose
+Gunakan script otomatis:
+```bash
+chmod +x deploy/deploy-server.sh
+./deploy/deploy-server.sh
+```
+Atau manual:
+```bash
+docker compose up -d --build
+```
+Aplikasi akan berjalan pada port internal `127.0.0.1:3000`.
+
+### 5. Konfigurasi Nginx Reverse Proxy
+Tambahkan konfigurasi lokasi subpath ke dalam blok `server` domain `vr.ti.fts.uika-bogor.ac.id` (misalnya di `/etc/nginx/sites-available/...`):
+
+```nginx
+location = /ijazah-bersuara {
+    return 301 /ijazah-bersuara/;
+}
+
+location /ijazah-bersuara/ {
+    proxy_pass http://127.0.0.1:3000/;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+
+    client_max_body_size 25M;
+
+    proxy_connect_timeout 90s;
+    proxy_send_timeout 90s;
+    proxy_read_timeout 90s;
+    proxy_buffering off;
+}
+```
+
+Uji dan muat ulang Nginx:
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Buka peramban di: `https://vr.ti.fts.uika-bogor.ac.id/ijazah-bersuara`
+
+### 6. Pencadangan Kunci Privat (PENTING)
+Kunci penerbit Ed25519 disimpan di volume Docker `keys` (`/data/keys/issuer_ed25519.pem`).
+Cadangkan berkas ini ke tempat yang aman:
+```bash
+docker compose cp web:/data/keys/issuer_ed25519.pem ./backup_issuer_ed25519.pem
+```
+
 ## Pengujian
 
 `web/test/e2e.js` menjalankan seluruh alur terhadap server yang berjalan dengan basis data kosong:
