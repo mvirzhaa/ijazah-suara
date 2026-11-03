@@ -58,3 +58,4 @@ echo "  Container berjalan di port 3000 (127.0.0.1:3000)."
 echo "  Pastikan konfigurasi Nginx sudah diarahkan ke 127.0.0.1:3000"
 echo "  Lihat contoh konfigurasi Nginx di: nginx/nginx-subpath.conf"
 echo "=========================================================="
+

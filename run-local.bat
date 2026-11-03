@@ -27,3 +27,4 @@ echo Untuk melihat log: docker compose logs -f
 echo Untuk mematikan: docker compose down
 echo.
 pause
+
